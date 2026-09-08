@@ -36,7 +36,7 @@ CI3 aims to be clutter free. These are the main scripts to be aware of:
 
 - `/ci.sh` - For all CI related workflow such as triggering CI runs, tailing logs, getting historical logs, running on remote machines with different architectures, etc.
 - `/bootstrap.sh` - Root bootstrap script. Can build, test and deploy the entire repository.
-- `/**/bootstrap.sh` - Project specific bootstrap scripts. Follow common patterns such as allowing fetching of test commands. Where possible _everything needed to **bootstrap, test, and release** the project should be in this one script_. There maybe some exceptions but we want "locality of behaviour".
+- `/**/bootstrap.sh` - Project specific bootstrap scripts. Follow common patterns such as allowing fetching of test commands. Where possible _everything needed to **bootstrap, test, and release** the project should be in this one script_. There may be some exceptions but we want "locality of behaviour".
 - `/**/scripts/run_test.sh` - Each project has such a script that, given arguments, can run a _single_ test. The test commands returned by `./bootstrap test_cmds` will usually be calling this script in each project.
 
 As a general philosophy, do not be creating random little scripts to aid in your workflow. I'd be happy to hear what workflow problems you're having, and we can look at updating the existing bootstrap scripts to better support it.
