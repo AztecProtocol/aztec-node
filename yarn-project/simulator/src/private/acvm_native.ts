@@ -8,6 +8,7 @@ import { Timer } from '@aztec-labs/foundation/timer';
 import type { FunctionArtifactWithContractName } from '@aztec-labs/stdlib/abi';
 import type { NoirCompiledCircuitWithName } from '@aztec-labs/stdlib/noir';
 import * as proc from 'child_process';
+import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
@@ -208,9 +209,21 @@ export class NativeACVMSimulator implements CircuitSimulator {
         // compiled output, so concurrent writers agree on the contents, but a plain write is not
         // atomic and would expose a truncated file. Write aside and rename, which is atomic within
         // a filesystem, so a reader sees either no file or a complete one.
-        const pendingPath = `${artifactPath}.${process.pid}.tmp`;
+        //
+        // The aside path is unique per write, not per process: `artifactPaths` memoizes one writer
+        // per simulator, but one process can hold several simulators over the same working
+        // directory, and any name both of them derive is a single file with two writers, where the
+        // first rename moves it away and the second fails with ENOENT.
+        const pendingPath = `${artifactPath}.${randomUUID()}.tmp`;
         await fs.writeFile(pendingPath, contents);
-        await fs.rename(pendingPath, artifactPath);
+        try {
+          await fs.rename(pendingPath, artifactPath);
+        } catch (err) {
+          // A unique name is never reused, so an abandoned write is only reclaimed by whoever owns
+          // the working directory, and these artifacts run to tens of megabytes.
+          await fs.rm(pendingPath, { force: true }).catch(() => {});
+          throw err;
+        }
         return artifactPath;
       })();
       this.artifactPaths.set(key, written);
