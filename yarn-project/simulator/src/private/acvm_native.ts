@@ -213,14 +213,16 @@ export class NativeACVMSimulator implements CircuitSimulator {
         // The aside path is unique per write, not per process: `artifactPaths` memoizes one writer
         // per simulator, but one process can hold several simulators over the same working
         // directory, and any name both of them derive is a single file with two writers, where the
-        // first rename moves it away and the second fails with ENOENT.
-        const pendingPath = `${artifactPath}.${randomUUID()}.tmp`;
+        // first rename moves it away and the second fails with ENOENT. The pid stays in front of
+        // the unique part so that a leftover from a killed process is still attributable, and can
+        // be swept once that pid is gone.
+        const pendingPath = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`;
         await fs.writeFile(pendingPath, contents);
         try {
           await fs.rename(pendingPath, artifactPath);
         } catch (err) {
-          // A unique name is never reused, so an abandoned write is only reclaimed by whoever owns
-          // the working directory, and these artifacts run to tens of megabytes.
+          // The working directory outlives the process and these artifacts run to tens of
+          // megabytes, so an abandoned write has to be cleared rather than left to be overwritten.
           await fs.rm(pendingPath, { force: true }).catch(() => {});
           throw err;
         }
