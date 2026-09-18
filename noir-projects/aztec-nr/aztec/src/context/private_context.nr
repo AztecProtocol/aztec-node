@@ -37,7 +37,7 @@ use crate::protocol::{
         MAX_KEY_VALIDATION_REQUESTS_PER_CALL, MAX_L2_TO_L1_MSGS_PER_CALL, MAX_NOTE_HASH_READ_REQUESTS_PER_CALL,
         MAX_NOTE_HASHES_PER_CALL, MAX_NULLIFIER_READ_REQUESTS_PER_CALL, MAX_NULLIFIERS_PER_CALL,
         MAX_PRIVATE_CALL_STACK_LENGTH_PER_CALL, MAX_PRIVATE_LOGS_PER_CALL, MAX_TX_LIFETIME,
-        NULL_MSG_SENDER_CONTRACT_ADDRESS, PRIVATE_LOG_CIPHERTEXT_LEN,
+        NULL_MSG_SENDER_CONTRACT_ADDRESS, PRIVATE_LOG_CIPHERTEXT_LEN, PRIVATE_LOG_SIZE_IN_FIELDS,
     },
     hash::compute_contract_class_log_hash,
     messaging::l2_to_l1_message::L2ToL1Message,
@@ -974,6 +974,10 @@ impl PrivateContext {
     /// * `note_hash_counter` - The side-effect counter that was assigned to the new note_hash when it was pushed to
     /// this `PrivateContext`.
     ///
+    /// Only the first `log.len()` entries of `log` are emitted. The protocol requires every field of a private log
+    /// beyond its emitted length to be zero, so this function zeroes those fields itself rather than copying whatever
+    /// the `BoundedVec`'s backing storage holds past `len()`.
+    ///
     /// Important: If your application logic requires the log to always be emitted regardless of note squashing,
     /// consider using [`emit_private_log_unsafe`](PrivateContext::emit_private_log_unsafe) instead, or emitting
     /// additional events.
@@ -988,8 +992,18 @@ impl PrivateContext {
         note_hash_counter: u32,
     ) {
         let counter = self.next_counter();
-        let full_log = [tag].concat(log.storage());
-        let private_log = PrivateLogData { log: PrivateLog::new(full_log, log.len() + 1), note_hash_counter };
+        // `BoundedVec::truncate` and `pop` only move `len`; the vacated storage keeps its old values. Copy only the
+        // live prefix so the emitted log is zero past its length whatever the caller did to the vector.
+        let log_storage = log.storage();
+        let log_len = log.len();
+        let mut full_log = [0; PRIVATE_LOG_SIZE_IN_FIELDS];
+        full_log[0] = tag;
+        for i in 0..PRIVATE_LOG_CIPHERTEXT_LEN {
+            if i < log_len {
+                full_log[i + 1] = log_storage[i];
+            }
+        }
+        let private_log = PrivateLogData { log: PrivateLog::new(full_log, log_len + 1), note_hash_counter };
         self.private_logs.push(private_log.count(counter));
     }
 
