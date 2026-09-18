@@ -5,6 +5,7 @@ import type { UInt64 } from '@aztec-labs/stdlib/types';
 const ROUNDED_DURATIONS = [
   3600, // 1 hour
   1800, // 30 mins
+  60, // 1 min
   1, // 1 second
 ];
 
@@ -33,14 +34,12 @@ export function computeTxExpirationTimestamp(
 
   const anchorBlockTimestamp = previousKernel.constants.anchorBlockHeader.globalVariables.timestamp;
   const maxTimestamp = anchorBlockTimestamp + BigInt(txLifetime);
-  const expirationTimestamp = previousKernel.expirationTimestamp;
 
-  // If the expirationTimestamp set during the tx execution is greater than or equal to the max allowed duration,
-  // use the maximum allowed timestamp.
-  // Note: It shouldn't be larger than the max allowed duration, but we check for it anyway.
-  if (expirationTimestamp >= maxTimestamp) {
-    return maxTimestamp;
-  }
+  // A kernel value at or above the max comes only from callees with an update delay above the default. Cap it one
+  // second below the max so it rounds into the same bucket as a tx whose callees use the default delay, whose kernel
+  // value is anchor + DEFAULT_UPDATE_DELAY - 1. Publishing the exact max would single those callees out.
+  const expirationTimestamp =
+    previousKernel.expirationTimestamp >= maxTimestamp ? maxTimestamp - 1n : previousKernel.expirationTimestamp;
 
   // Round it down to the nearest hour/min/second to reduce precision and avoid revealing the exact value.
   // This makes it harder for others to infer what function calls may have been used to produce a specific timestamp.
