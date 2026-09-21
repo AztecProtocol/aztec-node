@@ -17,7 +17,7 @@ pub struct WithHash<T, let M: u32> {
 
 impl<T, let M: u32> WithHash<T, M>
 where
-    T: Packable<N = M> + Eq,
+    T: Packable<N = M>,
 {
     pub fn new(value: T) -> Self {
         let packed = value.pack();
@@ -70,8 +70,9 @@ where
             assert_eq(hash, hint.get_hash(), "Hint values do not match hash");
         } else {
             // The hash slot can only hold a zero if it is uninitialized. Therefore, the hints must then be zero (i.e.
-            // the default value for public storage) as well.
-            assert_eq(hint.get_value(), T::unpack(std::mem::zeroed()), "Non-zero hint for zero hash");
+            // the default value for public storage) as well. The packed fields are compared rather than the `T`
+            // values so that the check does not depend on `T`'s `Eq`, which may ignore some packed fields.
+            assert_eq(hint.packed, std::mem::zeroed(), "Non-zero hint for zero hash");
         };
 
         hint.get_value()
@@ -180,6 +181,53 @@ mod test {
 
             // This should fail because the hint value is non-zero and the hash is zero (default value of storage)
             let _ = WithHash::<MockStruct, _>::historical_public_storage_read(block_header, address, STORAGE_SLOT);
+        });
+    }
+
+    /// `Eq` deliberately ignores `b`, so a value can be equal to the zero value while packing to non-zero fields.
+    struct MockStructWithPartialEq {
+        a: Field,
+        b: Field,
+    }
+
+    impl Eq for MockStructWithPartialEq {
+        fn eq(self, other: Self) -> bool {
+            self.a == other.a
+        }
+    }
+
+    impl Packable for MockStructWithPartialEq {
+        let N: u32 = 2;
+
+        fn pack(self) -> [Field; Self::N] {
+            [self.a, self.b]
+        }
+
+        fn unpack(fields: [Field; Self::N]) -> Self {
+            Self { a: fields[0], b: fields[1] }
+        }
+    }
+
+    #[test(should_fail_with = "Non-zero hint for zero hash")]
+    unconstrained fn bad_hint_uninitialized_value_with_eq_ignoring_packed_field() {
+        let env = TestEnvironment::new();
+
+        env.private_context(|context| {
+            let block_header = context.anchor_block_header;
+            let address = context.this_address();
+
+            // The hint is `Eq`-equal to the zero value (`a` matches) but its packed fields are not all zero.
+            let value_packed = MockStructWithPartialEq { a: 0, b: 1 }.pack();
+            let _ = OracleMock::mock("aztec_utl_getFromPublicStorage")
+                .with_params((block_header.hash(), address.to_field(), STORAGE_SLOT, value_packed.len()))
+                .returns(value_packed)
+                .times(1);
+
+            let _ = WithHash::<MockStructWithPartialEq, _>::historical_public_storage_read(
+                block_header,
+                address,
+                STORAGE_SLOT,
+            );
         });
     }
 
