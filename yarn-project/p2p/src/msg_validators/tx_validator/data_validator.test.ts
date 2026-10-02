@@ -237,9 +237,6 @@ describe('TxDataValidator', () => {
     const goodTxs = await mockTxsWithCCLog(2);
     const badTxs = await mockTxsWithCCLog(1);
 
-    // The trailing fields of the emitted log can be zero.
-    goodTxs[0].data.forPublic!.nonRevertibleAccumulatedData.contractClassLogsHashes[0].logHash.length += 1;
-
     // Add an extra non-zero field.
     const log = badTxs[0].contractClassLogFields[0];
     const logHash = badTxs[0].data.forPublic!.nonRevertibleAccumulatedData.contractClassLogsHashes[0].logHash;
@@ -250,6 +247,19 @@ describe('TxDataValidator', () => {
     await expectValid(goodTxs);
 
     await expectInvalid(badTxs[0], TX_ERROR_CONTRACT_CLASS_LOG_LENGTH);
+  });
+
+  it('rejects txs whose contract class log length covers trailing zero fields', async () => {
+    const [txOneExtra, txFullSize] = await mockTxsWithCCLog(2);
+
+    // The hash covers the full padded log, so it still matches; only the length is inflated. The tx base rejects
+    // such a length, so the tx could never be proven.
+    txOneExtra.data.forPublic!.nonRevertibleAccumulatedData.contractClassLogsHashes[0].logHash.length += 1;
+    txFullSize.data.forPublic!.nonRevertibleAccumulatedData.contractClassLogsHashes[0].logHash.length =
+      CONTRACT_CLASS_LOG_SIZE_IN_FIELDS;
+
+    await expectInvalid(txOneExtra, TX_ERROR_CONTRACT_CLASS_LOG_LENGTH);
+    await expectInvalid(txFullSize, TX_ERROR_CONTRACT_CLASS_LOG_LENGTH);
   });
 
   describe('private log padding', () => {

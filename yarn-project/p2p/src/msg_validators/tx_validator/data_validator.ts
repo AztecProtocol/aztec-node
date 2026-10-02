@@ -121,12 +121,14 @@ export class DataTxValidator implements TxValidator<Tx> {
         }
       }
 
-      const expectedMinLength = 1 + tx.contractClassLogFields[i].fields.findLastIndex(f => !f.isZero());
-      if (logHash.logHash.length < expectedMinLength) {
+      // The tx base requires the length to be exactly the trimmed length of the log: every field from the length on
+      // is zero, and the last field covered by the length is not. A tx with any other length cannot be proven.
+      const expectedLength = 1 + tx.contractClassLogFields[i].fields.findLastIndex(f => !f.isZero());
+      if (logHash.logHash.length !== expectedLength) {
         this.#log.verbose(
           `Rejecting tx ${tx
             .getTxHash()
-            .toString()} because of incorrect contract class log length. Expected the length to be at least ${expectedMinLength}. Got ${
+            .toString()} because of incorrect contract class log length. Expected ${expectedLength}. Got ${
             logHash.logHash.length
           }.`,
         );
